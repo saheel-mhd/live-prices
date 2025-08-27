@@ -88,7 +88,7 @@ def create_arrow(color, direction="up"):
 # Price Box
 # -------------------------------
 class PriceBox(QFrame):
-    def __init__(self, symbol="", row_index=0, remove_callback=None, add_callback=None, parent_widget=None, header_symbol_lbl = None):
+    def __init__(self, symbol="", row_index=0, remove_callback=None, add_callback=None, parent_widget=None, header_symbol_lbl = None, header_frame = None):
         super().__init__()
         self.last_bid = 0.0
         self.last_ask = 0.0
@@ -96,6 +96,8 @@ class PriceBox(QFrame):
         self.add_callback = add_callback
         self.parent_widget = parent_widget  # MainWindow
         self.header_symbol_lbl = header_symbol_lbl
+        self.header_frame = header_frame
+        
 
         # shadow + style
         shadow = QGraphicsDropShadowEffect()
@@ -108,8 +110,8 @@ class PriceBox(QFrame):
         layout.setContentsMargins(10,5,10,5)
         layout.setSpacing(12)
 
-        bg_color = "#2f3338" if row_index % 2 == 1 else "#22272b"
-        self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px; }}")
+        
+        
 
         # Symbol
         self.symbol = QLabel(symbol)
@@ -262,6 +264,7 @@ class PriceBox(QFrame):
         self.dropdown.hide()
         if self.add_callback:
             self.add_callback(self)
+        self.update_buttons(show_add=False)
 
     def update_prices(self, bid, ask, low, high):
         try:
@@ -289,6 +292,31 @@ class PriceBox(QFrame):
         self.high.setText(_fmt("" if high == "" else high))
         self.low.setText(_fmt(low))
 
+    # update backgroung and toggle mode for pricebox class
+    def update_background(self, row_index):
+        if self.parent_widget and self.parent_widget.is_darkmode:
+            bg_color = "#2f3338" if row_index % 2 == 1 else "#22272b"
+        else:
+            bg_color = "#f5f4e9" if row_index % 2 == 1 else "#f7f4e9"
+        self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px;}}")
+        
+    def apply_theme(self):
+        """Update text colors for labels based on current theme."""
+        if self.parent_widget and self.parent_widget.is_darkmode:
+            # Dark mode
+            self.symbol.setStyleSheet("color: white; font-size: 20pt;")
+            self.high.setStyleSheet("color: white; font-size: 22pt;")
+            self.low.setStyleSheet("color: white; font-size: 22pt;")
+            self.up_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
+        else:
+            # Light mode
+            self.symbol.setStyleSheet("color: black; font-size: 20pt;")
+            self.high.setStyleSheet("color: black; font-size: 22pt;")
+            self.low.setStyleSheet("color: black; font-size: 22pt;")
+            self.up_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
+
 
 # -------------------------------
 # Excel Live Source
@@ -308,7 +336,7 @@ class ExcelLiveSource:
         self.sheet = self.wb.sheets[self.sheet_name]
 
     def read_rows(self):
-        # expected range: B2:F500 -> [Symbol, Bid, Ask, High, Low]
+        # expected range: B2:F500 -> [Symbol, Bid, Ask, Low, High]
         values = self.sheet.range("B2:F500").value
         rows = []
         if not values:
@@ -321,8 +349,8 @@ class ExcelLiveSource:
                 continue
             bid = row[1] if len(row) > 1 else ""
             ask = row[2] if len(row) > 2 else ""
-            low = row[4] if len(row) > 4 else ""
-            high = row[3] if len(row) > 3 else ""
+            low = row[3] if len(row) > 3 else ""
+            high = row[4] if len(row) > 4 else ""
             
             rows.append((str(symbol), _fmt(bid), _fmt(ask), _fmt(low), _fmt(high)))
 
@@ -342,21 +370,28 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Live Prices")
         self.setStyleSheet("background-color: black;")
+        
+        #default theme as dark
+        self.is_darkmode = True
 
         main = QVBoxLayout(self)
         main.setContentsMargins(5,5,5,5)
         main.setSpacing(5)
 
         # Fixed header (kept)
-        header = QFrame()
-        header.setStyleSheet("background-color:#111;")
-        hl = QHBoxLayout(header)
+        self.header_frame = QFrame()
+        self.header_frame.setStyleSheet("background-color:#111;")
+        hl = QHBoxLayout(self.header_frame)
         hl.setContentsMargins(10,8,10,8)
         hl.setSpacing(12)
         headers = ["Symbol","Bid","Ask","Low","High"]
         for i, h in enumerate(headers):
             lbl = QLabel(h)
-            lbl.setStyleSheet("color: gold; font-size: 18pt; font-weight:bold;")
+            if self.is_darkmode:
+                
+                lbl.setStyleSheet("color: gold; font-size: 16pt; font-weight:bold;")
+            else:
+                lbl.setStyleSheet("color: black; font-size: 16pt; font-weight:bold;")
             lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             
             if h.lower() == "symbol":
@@ -366,7 +401,8 @@ class MainWindow(QWidget):
         spacer = QFrame()
         spacer.setFixedWidth(5)  # space for ↑/↓ and ✖/➕
         hl.addWidget(spacer)
-        main.addWidget(header)
+        main.addWidget(self.header_frame)
+        
 
         # Scroll area for rows
         self.scroll = QScrollArea()
@@ -418,6 +454,17 @@ class MainWindow(QWidget):
         
         
         #dark mode button
+        self.mode_btn = QPushButton("🌓")
+        self.mode_btn.setFixedSize(35, 35)
+        self.mode_btn.clicked.connect(self.toggle_mode)
+        self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
+        hl.addWidget(self.mode_btn)
+    
+        
+        
+        # put it last , 
+        self.apply_theme()    
+        
 
     # --- New helpers for +/search ---
     def get_available_symbols_from_excel(self):
@@ -469,6 +516,38 @@ class MainWindow(QWidget):
             b.show()
         self.boxes = ordered
 
+    def apply_theme(self):
+        if self.is_darkmode:
+            self.setStyleSheet("background-color: black;")
+            self.header_frame.setStyleSheet("background-color: #111;")
+            header_color = "gold"
+            
+        else :
+            self.setStyleSheet("background-color: white;")
+            self.header_frame.setStyleSheet("background-color: white;")
+            header_color = "black"
+            
+        for lbl in self.header_frame.findChildren(QLabel):
+            lbl.setStyleSheet(f"color: {header_color}; font-weight: bold; font-size: 18pt")
+
+            
+            
+            
+    def update_background(self, row_index):
+        if self.parent_widget and self.parent_widget.is_darkmode:
+            bg_color = "#2f3338" if row_index % 2 == 1 else "#22272b"
+        else:
+            bg_color = "#f5f4e9" if row_index % 2 == 1 else "#fcf6dc"
+        self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px;}}")
+    
+    def toggle_mode(self):
+        self.is_darkmode = not self.is_darkmode
+        self.apply_theme()
+        for i, box in enumerate(self.boxes):
+            box.update_background(i)
+            box.apply_theme()
+    
+    
     def update_add_buttons(self):
         """
         Show ➕ only on the first empty row; ensure there's always ONE empty row at
@@ -606,7 +685,7 @@ class MainWindow(QWidget):
                 if i < len(rows):
                     sym, bid, ask, low, high = rows[i]
                     box.symbol.setText(str(sym))
-                    box.update_prices(bid, ask, high, low)
+                    box.update_prices(bid, ask, low, high)
                 else:
                     box.symbol.setText("")
                     box.update_prices("", "", "", "")
