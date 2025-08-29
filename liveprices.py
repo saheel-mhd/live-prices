@@ -25,24 +25,38 @@ MAX_BOXES = 12  # initial number of rows to create (list can grow)
 # -------------------------------
 # Config file handling
 # -------------------------------
-def save_config(file_path, sheet_name):
+def save_config(file_path, sheet_name, rows=None, font=None, is_darkmode=True):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         f.write(f"FILE_PATH={file_path}\n")
         f.write(f"SHEET_NAME={sheet_name}\n")
+        if font:
+            f.write(f"FONT={font.family()},{font.pointSize()}\n")
+        f.write(f"IS_DARKMODE={is_darkmode}\n")
+        if rows:
+            f.write(f"ROWS={','.join(rows)}\n")
+
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         return None
-    file_path = sheet_name = None
+    config = {}
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         for line in f:
-            if line.startswith("FILE_PATH="):
-                file_path = line.strip().split("=", 1)[1]
-            elif line.startswith("SHEET_NAME="):
-                sheet_name = line.strip().split("=", 1)[1]
-    if file_path and sheet_name:
-        return {"file": file_path, "sheet": sheet_name}
-    return None
+            line = line.strip()
+            if not line:
+                continue
+            key, val = line.split("=", 1)
+            config[key] = val
+    if "FONT" in config:
+        family, size = config["FONT"].split(",")
+        config["FONT"] = QFont(family, int(size))
+    config["IS_DARKMODE"] = config.get("IS_DARKMODE","True") == "True"
+    if "ROWS" in config:
+        config["ROWS"] = config["ROWS"].split(",")
+    else:
+        config["ROWS"] = []
+    return config
+
 
 # -------------------------------
 # Helpers
@@ -830,6 +844,27 @@ class MainWindow(QWidget):
         if hasattr(self, 'header_frame'):
             for lbl in self.header_frame.findChildren(QLabel):
                 lbl.setFont(self.current_font)
+                
+    
+    
+    def closeEvent(self, event):
+        try: self.timer.stop()
+        except Exception: pass
+        try: self.source.close()
+        except Exception: pass
+
+        # Save current config
+        rows = [b.symbol.text().strip() for b in self.boxes]
+        save_config(
+            self.source.path,
+            self.source.sheet_name,
+            rows=rows,
+            font=self.current_font,
+            is_darkmode=self.is_darkmode
+        )
+
+        super().closeEvent(event)
+
 
 
 # -------------------------------
@@ -837,8 +872,16 @@ class MainWindow(QWidget):
 # -------------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    config = load_config()
-    if not config:
+    config_data = load_config()
+
+    if config_data:
+        file_path = config_data.get("FILE_PATH", "")
+        sheet_name = config_data.get("SHEET_NAME", "")
+        saved_rows = config_data.get("ROWS", [])
+        is_darkmode = config_data.get("IS_DARKMODE", True)
+        current_font = config_data.get("FONT", QFont("Arial", 10))
+    else:
+        # Ask user to select Excel file & sheet
         from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox
 
         class ExcelConfigDialog(QDialog):
@@ -846,35 +889,34 @@ if __name__ == "__main__":
                 super().__init__()
                 self.setWindowTitle("Select Excel File & Sheet")
                 self.resize(400, 150)
+                self.selected_config = None
 
-                self.layout = QFormLayout(self)
+                layout = QFormLayout(self)
 
-                # File input + browse button
+                # File input + browse
                 self.file_input = QLineEdit()
                 self.file_btn = QPushButton("Browse")
-                hb = QHBoxLayout()
-                hb.addWidget(self.file_input)
-                hb.addWidget(self.file_btn)
-                self.layout.addRow("Excel File:", hb)
+                hb_file = QHBoxLayout()
+                hb_file.addWidget(self.file_input)
+                hb_file.addWidget(self.file_btn)
+                layout.addRow("Excel File:", hb_file)
 
                 # Sheet input + dropdown
                 self.sheet_input = QLineEdit()
                 self.sheet_dropdown = QComboBox()
-                shb = QHBoxLayout()
-                shb.addWidget(self.sheet_input)
-                shb.addWidget(self.sheet_dropdown)
-                self.layout.addRow("Sheet name:", shb)
+                hb_sheet = QHBoxLayout()
+                hb_sheet.addWidget(self.sheet_input)
+                hb_sheet.addWidget(self.sheet_dropdown)
+                layout.addRow("Sheet name:", hb_sheet)
 
-                # Buttons
+                # OK/Cancel buttons
                 bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
                 bb.accepted.connect(self.accept)
                 bb.rejected.connect(self.reject)
-                self.layout.addRow(bb)
+                layout.addRow(bb)
 
                 self.file_btn.clicked.connect(self.browse_file)
                 self.sheet_dropdown.currentTextChanged.connect(self.update_sheet_input)
-
-                self.selected_config = None
 
             def browse_file(self):
                 file_path, _ = QFileDialog.getOpenFileName(
@@ -904,18 +946,31 @@ if __name__ == "__main__":
                     QMessageBox.warning(self, "Error", "Sheet name cannot be empty.")
                     return
                 save_config(file_path, sheet_name)
-                self.selected_config = {"file": file_path, "sheet": sheet_name}
+                self.selected_config = {"FILE_PATH": file_path, "SHEET_NAME": sheet_name}
                 super().accept()
-                
-            
-
 
         dlg = ExcelConfigDialog()
         if dlg.exec_() != QDialog.Accepted:
             sys.exit()
-        config = dlg.selected_config
+        config_data = dlg.selected_config
+        file_path = config_data["FILE_PATH"]
+        sheet_name = config_data["SHEET_NAME"]
+        saved_rows = []
+        is_darkmode = True
+        current_font = QFont("Arial", 10)
 
-    window = MainWindow(config['file'], config['sheet'])
+    # Initialize main window
+    window = MainWindow(file_path, sheet_name)
+    window.is_darkmode = is_darkmode
+    window.current_font = current_font
+    window.apply_theme()
+    window.apply_font_to_widgets()
+
+    # Restore saved rows if any
+    for i, box in enumerate(window.boxes):
+        if i < len(saved_rows):
+            box.symbol.setText(saved_rows[i])
+    window.update_add_buttons()
+
     window.showMaximized()
     sys.exit(app.exec_())
-
