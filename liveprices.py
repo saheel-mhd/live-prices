@@ -5,11 +5,11 @@ import xlwings as xw
 import pandas as pd
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QVBoxLayout, QHBoxLayout, QMessageBox,
+    QFileDialog, QVBoxLayout, QHBoxLayout, QMessageBox, QComboBox,
     QGridLayout, QGraphicsDropShadowEffect, QShortcut, QFrame,
-    QListWidget, QListWidgetItem, QScrollArea
+    QListWidget, QListWidgetItem, QScrollArea, QStyledItemDelegate, QStyle, QShortcut
 )
-from PyQt5.QtGui import QColor, QKeySequence, QPixmap, QPainter, QPolygon, QBrush
+from PyQt5.QtGui import QColor, QKeySequence, QPixmap, QPainter, QPolygon, QBrush, QFont, QFontDatabase
 from PyQt5.QtCore import (
     Qt, QTimer, QPoint, QEvent, QRect,
     QEasingCurve, QPropertyAnimation, QParallelAnimationGroup
@@ -84,6 +84,11 @@ def create_arrow(color, direction="up"):
     painter.end()
     return pixmap
 
+
+
+
+
+
 # -------------------------------
 # Price Box
 # -------------------------------
@@ -147,12 +152,12 @@ class PriceBox(QFrame):
 
         # High
         self.high = QLabel("")
-        self.high.setStyleSheet("color: skyblue; font-size: 22pt;")
+        self.high.setStyleSheet("color: white; font-size: 22pt;")
         layout.addWidget(self.high,1)
 
         # Low
         self.low = QLabel("")
-        self.low.setStyleSheet("color: skyblue; font-size: 22pt;")
+        self.low.setStyleSheet("color: white; font-size: 22pt;")
         layout.addWidget(self.low,1)
 
         # Visual Up/Down arrows (stacked)
@@ -361,6 +366,61 @@ class ExcelLiveSource:
             if self.wb: self.wb.close()
         finally:
             if self.app: self.app.quit()
+            
+# -------------------------------
+# Font Delegate for preview
+# -------------------------------
+class FontDelegate(QStyledItemDelegate):
+    
+    def paint(self, painter, option, index):
+        font_name = index.data()
+        painter.save()
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+
+        font = QFont(font_name, 12)
+        painter.setFont(font)
+        painter.setPen(option.palette.text().color())
+        painter.drawText(option.rect.adjusted(5, 0, 0, 0), Qt.AlignVCenter, font_name)
+        painter.restore()
+
+
+# -------------------------------
+# Font Changer Window
+# -------------------------------
+class FontChanger(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.setWindowTitle("Font Changer")
+        self.resize(400, 250)
+        self.main_window = main_window
+
+        layout = QVBoxLayout()
+
+        self.font_dropdown = QComboBox()
+        self.font_dropdown.setItemDelegate(FontDelegate())
+        self.populate_fonts()
+        layout.addWidget(self.font_dropdown)
+
+        self.apply_btn = QPushButton("Apply Font")
+        self.apply_btn.clicked.connect(self.apply_font)
+        layout.addWidget(self.apply_btn)
+
+        self.setLayout(layout)
+
+    def populate_fonts(self):
+        font_db = QFontDatabase()
+        fonts = font_db.families()
+        self.font_dropdown.addItems(fonts)
+
+    def apply_font(self):
+        font_name = self.font_dropdown.currentText()
+        font = QFont(font_name, 10)
+        self.main_window.current_font = font
+        self.main_window.apply_font_to_widgets()
+        QApplication.setFont(font)
+        self.close()            
+            
 
 # -------------------------------
 # Main Window
@@ -373,6 +433,10 @@ class MainWindow(QWidget):
         
         #default theme as dark
         self.is_darkmode = True
+        
+        # default font is arial
+        self.current_font = QFont("Arial", 10)  
+
 
         main = QVBoxLayout(self)
         main.setContentsMargins(5,5,5,5)
@@ -459,11 +523,16 @@ class MainWindow(QWidget):
         self.mode_btn.clicked.connect(self.toggle_mode)
         self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
         hl.addWidget(self.mode_btn)
-    
+
+        
+        # Shortcut to open Font Changer
+        self.font_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        self.font_shortcut.activated.connect(self.open_font_changer)
         
         
         # put it last , 
-        self.apply_theme()    
+        self.apply_theme()   
+         
         
 
     # --- New helpers for +/search ---
@@ -568,6 +637,7 @@ class MainWindow(QWidget):
                 add_callback=self.on_row_added,
                 parent_widget=self
             )
+            b.symbol.setFixedWidth(int(self.width() * 0.3))
             self.boxes.append(b)
             self.rows_layout.addWidget(b)
             empty_boxes = [b]
@@ -739,6 +809,28 @@ class MainWindow(QWidget):
                         box.input.hide()
                         self.update_add_buttons()
         return super().eventFilter(obj, event)
+    
+    
+
+    def open_font_changer(self):
+        self.font_window = FontChanger(self)
+        self.font_window.show()
+        
+    def apply_font(self):
+        font_name = self.font_dropdown.currentText()
+        font = QFont(font_name, 10)
+        QApplication.setFont(font)
+        self.close()
+        
+    def apply_font_to_widgets(self):
+        for box in self.boxes:
+            for lbl in [box.symbol, box.bid, box.ask, box.high, box.low]:
+                lbl.setFont(self.current_font)
+        # update header font 
+        if hasattr(self, 'header_frame'):
+            for lbl in self.header_frame.findChildren(QLabel):
+                lbl.setFont(self.current_font)
+
 
 # -------------------------------
 # Entry Point
