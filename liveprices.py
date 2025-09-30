@@ -15,13 +15,25 @@ from PyQt5.QtCore import (
     QEasingCurve, QPropertyAnimation, QParallelAnimationGroup
 )
 
+
+
+
 # -------------------------------
 # Config
 # -------------------------------
 CONFIG_FILE = "config.txt"
 EXCLUDED = {""}
 REFRESH_INTERVAL_MS = 100
-MAX_BOXES = 12  # initial number of rows to create (list can grow)
+MAX_BOXES = 12
+
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and PyInstaller """
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
 # -------------------------------
 # Config file handling
 # -------------------------------
@@ -66,7 +78,6 @@ def _fmt(price):
         if price is None:
             return ""
         p = float(price)
-        # Dynamic decimal places based on value
         if p > 9999:
             decimals = 3
         elif p >= 999:
@@ -80,43 +91,22 @@ def _fmt(price):
     except Exception:
         return str(price) if price is not None else ""
 
-# -------------------------------
-# Arrow Helper (kept)
-# -------------------------------
-def create_arrow(color, direction="up"):
-    pixmap = QPixmap(16, 16)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setBrush(QBrush(QColor(color)))
-    painter.setPen(Qt.NoPen)
-    if direction == "up":
-        points = [(8,0),(16,16),(0,16)]
-    else:
-        points = [(0,0),(16,0),(8,16)]
-    polygon = QPolygon([QPoint(x,y) for x,y in points])
-    painter.drawPolygon(polygon)
-    painter.end()
-    return pixmap
-
-
-
-
-
 
 # -------------------------------
 # Price Box
 # -------------------------------
 class PriceBox(QFrame):
-    def __init__(self, symbol="", row_index=0, remove_callback=None, add_callback=None, parent_widget=None, header_symbol_lbl = None, header_frame = None):
+    def __init__(self, symbol="", row_index=0, remove_callback=None, add_callback=None, parent_widget=None, header_symbol_lbl=None, header_frame=None):
         super().__init__()
         self.last_bid = 0.0
         self.last_ask = 0.0
+        self.bid_color = "white"  # Track current bid color state
+        self.ask_color = "white"  # Track current ask color state
         self.remove_callback = remove_callback
         self.add_callback = add_callback
-        self.parent_widget = parent_widget  # MainWindow
+        self.parent_widget = parent_widget
         self.header_symbol_lbl = header_symbol_lbl
         self.header_frame = header_frame
-        
 
         # shadow + style
         shadow = QGraphicsDropShadowEffect()
@@ -129,13 +119,9 @@ class PriceBox(QFrame):
         layout.setContentsMargins(10,5,10,5)
         layout.setSpacing(12)
 
-        
-        
-
         # Symbol
         self.symbol = QLabel(symbol)
-        self.symbol.setStyleSheet("color: white; font-size: 20pt; ")
-        #self.symbol.setFixedWidth(700)
+        self.symbol.setStyleSheet("color: white; font-size: 20pt;")
         layout.addWidget(self.symbol, 1)
 
         # Bid
@@ -187,10 +173,6 @@ class PriceBox(QFrame):
         self.arrow_col.addWidget(self.up_btn, alignment=Qt.AlignHCenter)
         self.arrow_col.addWidget(self.down_btn, alignment=Qt.AlignHCenter)
         layout.addLayout(self.arrow_col)
-        
-        
-        # initialize button visibility
-        
 
         # Remove (✖) button
         self.remove_btn = QPushButton("✖")
@@ -221,11 +203,10 @@ class PriceBox(QFrame):
         self.input.textChanged.connect(self.update_dropdown)
         self.dropdown.itemClicked.connect(self.select_symbol)
 
-        # arrow connections → ask parent to move row
+        # arrow connections
         self.up_btn.clicked.connect(lambda: self.parent_widget.request_move(self, -1) if self.parent_widget else None)
         self.down_btn.clicked.connect(lambda: self.parent_widget.request_move(self, +1) if self.parent_widget else None)
 
-        # initialize button visibility
         self.update_buttons(show_add=False)
 
     def update_buttons(self, show_add):
@@ -233,16 +214,17 @@ class PriceBox(QFrame):
         empty = (self.symbol.text().strip() == "")
         self.remove_btn.setVisible(not empty)
         self.add_btn.setVisible(empty and show_add)
-
-        # 👇 NEW: Hide arrow buttons when row has no symbol
         self.up_btn.setVisible(not empty)
         self.down_btn.setVisible(not empty)
-        
         
     def remove_self(self):
         """Clear this row but keep it in place."""
         self.symbol.setText("")
         self.update_prices("", "", "", "")
+        self.last_bid = 0.0
+        self.last_ask = 0.0
+        self.bid_color = "white"
+        self.ask_color = "white"
         if self.remove_callback:
             self.remove_callback(self)
 
@@ -267,10 +249,8 @@ class PriceBox(QFrame):
         if matches:
             for s in matches:
                 QListWidgetItem(s, self.dropdown)
-            # position dropdown under input
             pos = self.input.mapToGlobal(self.input.rect().bottomLeft())
             self.dropdown.move(pos)
-            # set width to input width
             self.dropdown.setFixedWidth(self.input.width())
             self.dropdown.show()
         else:
@@ -286,55 +266,105 @@ class PriceBox(QFrame):
         self.update_buttons(show_add=False)
 
     def update_prices(self, bid, ask, low, high):
+        """Update prices with persistent color logic."""
+        # Get dynamic font size from parent window
+        if self.parent_widget:
+            width = self.parent_widget.width()
+            base_width = 1920
+            scale_factor = max(min(width / base_width, 1.5), 0.4)
+            price_size = int(22 * scale_factor)
+        else:
+            price_size = 22
+        
+        # Update BID with persistent color
         try:
-            bid = float(bid)
-            if bid > self.last_bid:
-                self.bid.setStyleSheet("color: lime; font-size: 22pt; font-weight:bold;")
-            elif bid < self.last_bid:
-                self.bid.setStyleSheet("color: red; font-size: 22pt; font-weight:bold;")
-            self.bid.setText(_fmt(bid))
-            self.last_bid = bid
+            new_bid = float(bid)
+            
+            # Determine new color based on price change
+            if new_bid > self.last_bid:
+                self.bid_color = "lime"  # Price went up, stay green
+            elif new_bid < self.last_bid:
+                self.bid_color = "red"   # Price went down, stay red
+            # If equal, keep current color
+            
+            # Apply the color
+            self.bid.setStyleSheet(f"color: {self.bid_color}; font-size: {price_size}pt; font-weight:bold;")
+            self.bid.setText(_fmt(new_bid))
+            self.last_bid = new_bid
         except:
+            # Reset to default on error
+            default_color = "white" if (self.parent_widget and self.parent_widget.is_darkmode) else "black"
+            self.bid.setStyleSheet(f"color: {default_color}; font-size: {price_size}pt;")
             self.bid.setText(str(bid))
+            self.bid_color = default_color
 
+        # Update ASK with persistent color
         try:
-            ask = float(ask)
-            if ask > self.last_ask:
-                self.ask.setStyleSheet("color: lime; font-size: 22pt; font-weight:bold;")
-            elif ask < self.last_ask:
-                self.ask.setStyleSheet("color: red; font-size: 22pt; font-weight:bold;")
-            self.ask.setText(_fmt(ask))
-            self.last_ask = ask
+            new_ask = float(ask)
+            
+            # Determine new color based on price change
+            if new_ask > self.last_ask:
+                self.ask_color = "lime"  # Price went up, stay green
+            elif new_ask < self.last_ask:
+                self.ask_color = "red"   # Price went down, stay red
+            # If equal, keep current color
+            
+            # Apply the color
+            self.ask.setStyleSheet(f"color: {self.ask_color}; font-size: {price_size}pt; font-weight:bold;")
+            self.ask.setText(_fmt(new_ask))
+            self.last_ask = new_ask
         except:
+            # Reset to default on error
+            default_color = "white" if (self.parent_widget and self.parent_widget.is_darkmode) else "black"
+            self.ask.setStyleSheet(f"color: {default_color}; font-size: {price_size}pt;")
             self.ask.setText(str(ask))
+            self.ask_color = default_color
 
+        # Update High and Low (no color change logic needed)
         self.high.setText(_fmt("" if high == "" else high))
         self.low.setText(_fmt(low))
 
-    # update backgroung and toggle mode for pricebox class
     def update_background(self, row_index):
         if self.parent_widget and self.parent_widget.is_darkmode:
-            bg_color = "#2f3338" if row_index % 2 == 1 else "#22272b"
+            bg_color = "#2a2d30" if row_index % 2 == 1 else "#1B1E21"
         else:
             bg_color = "#f5f4e9" if row_index % 2 == 1 else "#f7f4e9"
         self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px;}}")
         
     def apply_theme(self):
         """Update text colors for labels based on current theme."""
-        if self.parent_widget and self.parent_widget.is_darkmode:
-            # Dark mode
-            self.symbol.setStyleSheet("color: white; font-size: 20pt;")
-            self.high.setStyleSheet("color: white; font-size: 22pt;")
-            self.low.setStyleSheet("color: white; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
+        if self.parent_widget:
+            width = self.parent_widget.width()
+            base_width = 1920
+            scale_factor = max(min(width / base_width, 1.5), 0.4)
+            symbol_size = int(20 * scale_factor)
+            price_size = int(22 * scale_factor)
+            button_size = int(18 * scale_factor)
         else:
-            # Light mode
-            self.symbol.setStyleSheet("color: black; font-size: 20pt;")
-            self.high.setStyleSheet("color: black; font-size: 22pt;")
-            self.low.setStyleSheet("color: black; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
+            symbol_size = 20
+            price_size = 22
+            button_size = 18
+            
+        if self.parent_widget and self.parent_widget.is_darkmode:
+            self.symbol.setStyleSheet(f"color: white; font-size: {symbol_size}pt;")
+            self.high.setStyleSheet(f"color: white; font-size: {price_size}pt;")
+            self.low.setStyleSheet(f"color: white; font-size: {price_size}pt;")
+            self.up_btn.setStyleSheet(f"color: gray; font-size: {button_size}pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet(f"color: gray; font-size: {button_size}pt; background: transparent; border: none;")
+            
+            # Update bid/ask but preserve their color state
+            self.bid.setStyleSheet(f"color: {self.bid_color}; font-size: {price_size}pt; font-weight:bold;")
+            self.ask.setStyleSheet(f"color: {self.ask_color}; font-size: {price_size}pt; font-weight:bold;")
+        else:
+            self.symbol.setStyleSheet(f"color: black; font-size: {symbol_size}pt;")
+            self.high.setStyleSheet(f"color: black; font-size: {price_size}pt;")
+            self.low.setStyleSheet(f"color: black; font-size: {price_size}pt;")
+            self.up_btn.setStyleSheet(f"color: lightgray; font-size: {button_size}pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet(f"color: lightgray; font-size: {button_size}pt; background: transparent; border: none;")
+            
+            # Update bid/ask but preserve their color state
+            self.bid.setStyleSheet(f"color: {self.bid_color}; font-size: {price_size}pt; font-weight:bold;")
+            self.ask.setStyleSheet(f"color: {self.ask_color}; font-size: {price_size}pt; font-weight:bold;")
 
 
 # -------------------------------
@@ -355,7 +385,6 @@ class ExcelLiveSource:
         self.sheet = self.wb.sheets[self.sheet_name]
 
     def read_rows(self):
-        # expected range: B2:F500 -> [Symbol, Bid, Ask, Low, High]
         values = self.sheet.range("B2:F500").value
         rows = []
         if not values:
@@ -380,7 +409,8 @@ class ExcelLiveSource:
             if self.wb: self.wb.close()
         finally:
             if self.app: self.app.quit()
-            
+
+
 # -------------------------------
 # Font Delegate for preview
 # -------------------------------
@@ -433,8 +463,8 @@ class FontChanger(QWidget):
         self.main_window.current_font = font
         self.main_window.apply_font_to_widgets()
         QApplication.setFont(font)
-        self.close()            
-            
+        self.close()
+
 
 # -------------------------------
 # Main Window
@@ -445,18 +475,38 @@ class MainWindow(QWidget):
         self.setWindowTitle("Live Prices")
         self.setStyleSheet("background-color: black;")
         
-        #default theme as dark
         self.is_darkmode = True
-        
-        # default font is arial
-        self.current_font = QFont("Arial", 10)  
-
+        self.current_font = QFont("Arial", 10)
 
         main = QVBoxLayout(self)
         main.setContentsMargins(5,5,5,5)
         main.setSpacing(5)
+        
+        # -------------------------------
+        # Logo at top
+        # -------------------------------
+        self.logo_label = QLabel()
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_dark = QPixmap(resource_path("./LANDMARK-MARKETS-WHITE-LOGO-2-scaled.png"))
+        self.logo_light = QPixmap(resource_path("./LANDMARK-MARKETS-BLACK-LOGO-2.png"))
+        
+        # helper
+        def update_logo_pixmap():
+            current = self.logo_dark if self.is_darkmode else self.logo_light
+            if current.isNull():
+                self.logo_label.clear()
+                return
+            target_width = max(200, self.width() -40)
+            max_logo_height = 150
+            scaled = current.scaled(target_width, max_logo_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.logo_label.setPixmap(scaled)
+            
+        self.update_logo_pixmap = update_logo_pixmap
+        
+        self.update_logo_pixmap()
+        main.addWidget(self.logo_label)
 
-        # Fixed header (kept)
+        # Fixed header
         self.header_frame = QFrame()
         self.header_frame.setStyleSheet("background-color:#111;")
         hl = QHBoxLayout(self.header_frame)
@@ -465,11 +515,7 @@ class MainWindow(QWidget):
         headers = ["Symbol","Bid","Ask","Low","High"]
         for i, h in enumerate(headers):
             lbl = QLabel(h)
-            if self.is_darkmode:
-                
-                lbl.setStyleSheet("color: gold; font-size: 16pt; font-weight:bold;")
-            else:
-                lbl.setStyleSheet("color: black; font-size: 16pt; font-weight:bold;")
+            lbl.setStyleSheet("color: gold; font-size: 16pt; font-weight:bold;")
             lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             
             if h.lower() == "symbol":
@@ -477,10 +523,17 @@ class MainWindow(QWidget):
             
             hl.addWidget(lbl, 1)
         spacer = QFrame()
-        spacer.setFixedWidth(5)  # space for ↑/↓ and ✖/➕
+        spacer.setFixedWidth(5)
         hl.addWidget(spacer)
-        main.addWidget(self.header_frame)
         
+        # Dark mode button
+        self.mode_btn = QPushButton("🌓")
+        self.mode_btn.setFixedSize(35, 35)
+        self.mode_btn.clicked.connect(self.toggle_mode)
+        self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
+        hl.addWidget(self.mode_btn)
+        
+        main.addWidget(self.header_frame)
 
         # Scroll area for rows
         self.scroll = QScrollArea()
@@ -513,10 +566,10 @@ class MainWindow(QWidget):
             self.rows_layout.addWidget(box)
             self.boxes.append(box)
 
-        self._anim_group = None  # keep reference to animations
+        self._anim_group = None
 
         self.initial_fill_done = False
-        self.last_rows_dict = {}  # symbol -> (bid, ask, low, high) strings
+        self.last_rows_dict = {}
 
         self.refresh_once()
         self.timer = QTimer()
@@ -527,42 +580,87 @@ class MainWindow(QWidget):
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+F1"), self)
         shortcut.activated.connect(self.toggle_fullscreen)
 
-        # Close dropdown/input when clicking elsewhere
         self.installEventFilter(self)
-        
-        
-        #dark mode button
-        self.mode_btn = QPushButton("🌓")
-        self.mode_btn.setFixedSize(35, 35)
-        self.mode_btn.clicked.connect(self.toggle_mode)
-        self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
-        hl.addWidget(self.mode_btn)
-
         
         # Shortcut to open Font Changer
         self.font_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         self.font_shortcut.activated.connect(self.open_font_changer)
         
-        
-        # put it last , 
-        self.apply_theme()   
-         
-        
+        self.apply_theme()
 
-    # --- New helpers for +/search ---
     def get_available_symbols_from_excel(self):
         """Return list of symbols present in Excel (from last read)."""
         return list(self.last_rows_dict.keys())
 
-
     def resizeEvent(self, event):
-                super().resizeEvent(event)
-                for box in self.boxes:
-                    # Make the symbol label 30% of the MainWindow width
-                    box.symbol.setFixedWidth(int(self.width() * 0.3))
-                if self.header_symbol_lbl:
-                    self.header_symbol_lbl.setFixedWidth(int(self.width() * 0.3))
-                
+        super().resizeEvent(event)
+        self.apply_dynamic_scaling()
+        self.fill_extra_rows_if_space()
+        
+        # Scale logo to window width
+        if hasattr(self, "update_logo_pixmap"):
+            self.update_logo_pixmap()
+    
+    def apply_dynamic_scaling(self):
+        width = self.width()
+        height = self.height()
+        
+        base_width = 1920
+        base_height = 1080
+        
+        scale_w = width / base_width
+        scale_h = height / base_height
+        scale_factor = min(scale_w, scale_h)
+        
+        scale_factor = max(scale_factor, 0.4)
+
+        # Boost vertical size a bit in portrait
+        if height > width:
+            scale_factor *= 1.2  # increase 20% in portrait
+
+        symbol_size = int(20 * scale_factor)
+        price_size = int(22 * scale_factor)
+        header_size = int(18 * scale_factor)
+        button_size = int(18 * scale_factor)
+        
+        symbol_width = int(width * 0.3)
+        
+        if self.header_symbol_lbl:
+            self.header_symbol_lbl.setFixedWidth(symbol_width)
+        
+        for lbl in self.header_frame.findChildren(QLabel):
+            current_style = lbl.styleSheet()
+            color = "gold" if "gold" in current_style else "black"
+            lbl.setStyleSheet(f"color: {color}; font-weight: bold; font-size: {header_size}pt")
+        
+        for box in self.boxes:
+            box.symbol.setFixedWidth(symbol_width)
+            
+            symbol_color = "white" if "white" in box.symbol.styleSheet() else "black"
+            box.symbol.setStyleSheet(f"color: {symbol_color}; font-size: {symbol_size}pt;")
+            
+            # Bid/Ask preserve color
+            box.bid.setStyleSheet(f"color: {box.bid_color}; font-size: {price_size}pt; font-weight: bold;")
+            box.ask.setStyleSheet(f"color: {box.ask_color}; font-size: {price_size}pt; font-weight: bold;")
+            
+            for lbl in [box.high, box.low]:
+                price_color = "white" if "white" in lbl.styleSheet() else "black"
+                lbl.setStyleSheet(f"color: {price_color}; font-size: {price_size}pt;")
+            
+            button_pixel_size = int(28 * scale_factor)
+            for btn in [box.up_btn, box.down_btn]:
+                btn.setFixedSize(button_pixel_size, button_pixel_size)
+                btn_color = "gray" if "gray" in btn.styleSheet() else "lightgray"
+                btn.setStyleSheet(f"color: {btn_color}; font-size: {button_size}pt; background: transparent; border: none;")
+            
+            box.remove_btn.setStyleSheet(f"color: red; font-size: {button_size}pt; background: transparent; border: none;")
+            box.add_btn.setStyleSheet(f"color: lime; font-size: {button_size}pt; background: transparent; border: none;")
+            box.input.setStyleSheet(f"font-size: {int(18 * scale_factor)}pt;")
+        
+        mode_btn_size = int(35 * scale_factor)
+        self.mode_btn.setFixedSize(mode_btn_size, mode_btn_size)
+        self.mode_btn.setStyleSheet(f"color: white; font-size: {button_size}pt; border: 1px solid white;")
+
 
     def on_row_cleared(self, _box):
         """Callback when a PriceBox clears itself (user clicked ✖)."""
@@ -581,14 +679,11 @@ class MainWindow(QWidget):
         self.update_add_buttons()
 
     def reorder_boxes(self):
-        """
-        Keep current relative order of active rows; move empty rows below them.
-        """
+        """Keep current relative order of active rows; move empty rows below them."""
         active = [b for b in self.boxes if b.symbol.text().strip() != ""]
         empty = [b for b in self.boxes if b.symbol.text().strip() == ""]
         ordered = active + empty
 
-        # Remove & re-add into layout in the new order
         for b in self.boxes:
             try:
                 self.rows_layout.removeWidget(b)
@@ -604,46 +699,36 @@ class MainWindow(QWidget):
             self.setStyleSheet("background-color: black;")
             self.header_frame.setStyleSheet("background-color: #111;")
             header_color = "gold"
-            
-        else :
+        else:
             self.setStyleSheet("background-color: white;")
             self.header_frame.setStyleSheet("background-color: white;")
             header_color = "black"
             
         for lbl in self.header_frame.findChildren(QLabel):
             lbl.setStyleSheet(f"color: {header_color}; font-weight: bold; font-size: 18pt")
-
-            
-            
-            
-    def update_background(self, row_index):
-        if self.parent_widget and self.parent_widget.is_darkmode:
-            bg_color = "#2f3338" if row_index % 2 == 1 else "#22272b"
-        else:
-            bg_color = "#f5f4e9" if row_index % 2 == 1 else "#fcf6dc"
-        self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px;}}")
     
     def toggle_mode(self):
         self.is_darkmode = not self.is_darkmode
         self.apply_theme()
+
+        # update boxes
         for i, box in enumerate(self.boxes):
             box.update_background(i)
             box.apply_theme()
-    
+        self.apply_dynamic_scaling()
+
+        # ✅ update logo based on mode
+        self.update_logo_pixmap()
+
     
     def update_add_buttons(self):
-        """
-        Show ➕ only on the first empty row; ensure there's always ONE empty row at
-        the bottom when there are still unused symbols in Excel.
-        """
-        # calculate remaining symbols
+        """Show ➕ only on the first empty row."""
         used = {b.symbol.text().strip() for b in self.boxes if b.symbol.text().strip()}
         all_syms = set(self.get_available_symbols_from_excel())
         remaining = [s for s in all_syms if s not in used]
 
         empty_boxes = [b for b in self.boxes if not b.symbol.text().strip()]
         if remaining and not empty_boxes:
-            # create a new empty row at the bottom
             b = PriceBox(
                 symbol="",
                 row_index=len(self.boxes),
@@ -656,18 +741,13 @@ class MainWindow(QWidget):
             self.rows_layout.addWidget(b)
             empty_boxes = [b]
 
-        # show ➕ only on the first empty row
         first_empty = empty_boxes[0] if empty_boxes else None
         for b in self.boxes:
             is_empty = (b.symbol.text().strip() == "")
             b.update_buttons(show_add=(b is first_empty))
 
-    # --- Smooth visual row swap on arrow click ---
     def request_move(self, box, direction):
-        """
-        Smoothly swap 'box' with its neighbor using ghost overlays inside
-        the scroll viewport, then reinsert widgets in the new order.
-        """
+        """Smoothly swap 'box' with its neighbor using animations."""
         try:
             idx = self.boxes.index(box)
         except ValueError:
@@ -678,16 +758,13 @@ class MainWindow(QWidget):
             return
 
         other = self.boxes[new_idx]
-
         viewport = self.scroll.viewport()
 
-        # map widget top-left to viewport coordinates for correct animation when scrolled
         p1 = box.mapTo(viewport, QPoint(0, 0))
         p2 = other.mapTo(viewport, QPoint(0, 0))
         r1 = QRect(p1, box.size())
         r2 = QRect(p2, other.size())
 
-        # Ghost overlays (screenshots) so we can animate freely
         pm1 = box.grab()
         pm2 = other.grab()
 
@@ -705,11 +782,9 @@ class MainWindow(QWidget):
         ghost2.raise_()
         ghost2.show()
 
-        # Hide the real widgets while animating
         box.hide()
         other.hide()
 
-        # Animations (slide)
         a1 = QPropertyAnimation(ghost1, b"pos", self)
         a1.setDuration(220)
         a1.setStartValue(r1.topLeft())
@@ -727,10 +802,8 @@ class MainWindow(QWidget):
         group.addAnimation(a2)
 
         def finalize():
-            # Swap in the list
             self.boxes[idx], self.boxes[new_idx] = self.boxes[new_idx], self.boxes[idx]
 
-            # Re-add all boxes in new order to preserve positions
             for b in self.boxes:
                 try:
                     self.rows_layout.removeWidget(b)
@@ -743,15 +816,13 @@ class MainWindow(QWidget):
             ghost1.deleteLater()
             ghost2.deleteLater()
 
-            # Keep + placement correct and ensure moved row is visible
             self.update_add_buttons()
             self.scroll.ensureWidgetVisible(box)
 
         group.finished.connect(finalize)
-        self._anim_group = group  # keep reference alive
+        self._anim_group = group
         group.start()
 
-    # --- Core refresh logic ---
     def refresh_once(self):
         try:
             rows = self.source.read_rows()
@@ -760,10 +831,8 @@ class MainWindow(QWidget):
             traceback.print_exc()
             rows = []
 
-        # update last rows dict for search & updates
         self.last_rows_dict = {sym: (bid, ask, low, high) for sym, bid, ask, low, high in rows}
 
-        # initial fill: set symbols sequentially once
         if not self.initial_fill_done:
             for i, box in enumerate(self.boxes):
                 if i < len(rows):
@@ -777,7 +846,6 @@ class MainWindow(QWidget):
             self.update_add_buttons()
             return
 
-        # after initial fill: only update boxes that have a symbol
         for box in self.boxes:
             sym = box.symbol.text().strip()
             if sym and sym in self.last_rows_dict:
@@ -785,13 +853,6 @@ class MainWindow(QWidget):
                 box.update_prices(bid, ask, low, high)
 
         self.update_add_buttons()
-
-    def closeEvent(self, event):
-        try: self.timer.stop()
-        except Exception: pass
-        try: self.source.close()
-        except Exception: pass
-        super().closeEvent(event)
 
     def toggle_fullscreen(self):
         if not self.is_fullscreen:
@@ -801,7 +862,6 @@ class MainWindow(QWidget):
             self.showNormal()
             self.is_fullscreen = False
 
-    # Close dropdown/input when clicking outside
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
             gp = event.globalPos()
@@ -823,37 +883,29 @@ class MainWindow(QWidget):
                         box.input.hide()
                         self.update_add_buttons()
         return super().eventFilter(obj, event)
-    
-    
 
     def open_font_changer(self):
         self.font_window = FontChanger(self)
         self.font_window.show()
         
-    def apply_font(self):
-        font_name = self.font_dropdown.currentText()
-        font = QFont(font_name, 10)
-        QApplication.setFont(font)
-        self.close()
-        
     def apply_font_to_widgets(self):
         for box in self.boxes:
             for lbl in [box.symbol, box.bid, box.ask, box.high, box.low]:
                 lbl.setFont(self.current_font)
-        # update header font 
         if hasattr(self, 'header_frame'):
             for lbl in self.header_frame.findChildren(QLabel):
                 lbl.setFont(self.current_font)
-                
-    
     
     def closeEvent(self, event):
-        try: self.timer.stop()
-        except Exception: pass
-        try: self.source.close()
-        except Exception: pass
+        try: 
+            self.timer.stop()
+        except Exception: 
+            pass
+        try: 
+            self.source.close()
+        except Exception: 
+            pass
 
-        # Save current config
         rows = [b.symbol.text().strip() for b in self.boxes]
         save_config(
             self.source.path,
@@ -864,6 +916,76 @@ class MainWindow(QWidget):
         )
 
         super().closeEvent(event)
+        
+        
+    def fill_extra_rows_if_space(self):
+        if not hasattr(self, 'boxes') or not self.boxes:
+            return
+
+        viewport_height = self.scroll.viewport().height()
+        if viewport_height <= 0:
+            return
+
+        example_box = self.boxes[0]
+        max_row_height = max(b.sizeHint().height() for b in self.boxes)
+        current_rows_height = sum(b.sizeHint().height() + self.rows_layout.spacing() for b in self.boxes)
+        remaining_height = viewport_height - current_rows_height
+        if remaining_height < max_row_height * 0.5:
+            return
+
+        extra_rows_count = int(remaining_height // max_row_height)
+        if extra_rows_count <= 0:
+            return
+
+        used_symbols = {b.symbol.text().strip() for b in self.boxes if b.symbol.text().strip()}
+        available_symbols = [s for s in self.get_available_symbols_from_excel() if s not in used_symbols]
+
+        font = self.current_font if hasattr(self, 'current_font') else QFont("Arial", 10)
+        symbol_width = int(self.width() * 0.3)  # match header width
+
+        for _ in range(extra_rows_count):
+            sym = available_symbols.pop(0) if available_symbols else ""
+            new_box = PriceBox(
+                symbol=sym,
+                row_index=len(self.boxes),
+                remove_callback=self.on_row_cleared,
+                add_callback=self.on_row_added,
+                parent_widget=self
+            )
+
+            # Apply font and fixed widths for all labels
+            for lbl in [new_box.symbol, new_box.bid, new_box.ask, new_box.high, new_box.low]:
+                lbl.setFont(font)
+                if lbl == new_box.symbol:
+                    lbl.setFixedWidth(symbol_width)
+                lbl.setSizePolicy(new_box.symbol.sizePolicy())  # enforce same policy
+
+            new_box.layout().setSpacing(12)
+            new_box.layout().setContentsMargins(10,5,10,5)
+
+            self.rows_layout.addWidget(new_box)
+            self.boxes.append(new_box)
+
+        # Ensure one blank last row
+        if self.boxes[-1].symbol.text().strip() != "":
+            blank_box = PriceBox(
+                symbol="",
+                row_index=len(self.boxes),
+                remove_callback=self.on_row_cleared,
+                add_callback=self.on_row_added,
+                parent_widget=self
+            )
+            for lbl in [blank_box.symbol, blank_box.bid, blank_box.ask, blank_box.high, blank_box.low]:
+                lbl.setFont(font)
+                if lbl == blank_box.symbol:
+                    lbl.setFixedWidth(symbol_width)
+                lbl.setSizePolicy(blank_box.symbol.sizePolicy())
+            self.rows_layout.addWidget(blank_box)
+            self.boxes.append(blank_box)
+
+        self.reorder_boxes()
+        self.update_add_buttons()
+        self.apply_dynamic_scaling()
 
 
 
@@ -881,8 +1003,7 @@ if __name__ == "__main__":
         is_darkmode = config_data.get("IS_DARKMODE", True)
         current_font = config_data.get("FONT", QFont("Arial", 10))
     else:
-        # Ask user to select Excel file & sheet
-        from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox
+        from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QFormLayout
 
         class ExcelConfigDialog(QDialog):
             def __init__(self):
@@ -893,7 +1014,6 @@ if __name__ == "__main__":
 
                 layout = QFormLayout(self)
 
-                # File input + browse
                 self.file_input = QLineEdit()
                 self.file_btn = QPushButton("Browse")
                 hb_file = QHBoxLayout()
@@ -901,7 +1021,6 @@ if __name__ == "__main__":
                 hb_file.addWidget(self.file_btn)
                 layout.addRow("Excel File:", hb_file)
 
-                # Sheet input + dropdown
                 self.sheet_input = QLineEdit()
                 self.sheet_dropdown = QComboBox()
                 hb_sheet = QHBoxLayout()
@@ -909,7 +1028,6 @@ if __name__ == "__main__":
                 hb_sheet.addWidget(self.sheet_dropdown)
                 layout.addRow("Sheet name:", hb_sheet)
 
-                # OK/Cancel buttons
                 bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
                 bb.accepted.connect(self.accept)
                 bb.rejected.connect(self.reject)
@@ -959,14 +1077,12 @@ if __name__ == "__main__":
         is_darkmode = True
         current_font = QFont("Arial", 10)
 
-    # Initialize main window
     window = MainWindow(file_path, sheet_name)
     window.is_darkmode = is_darkmode
     window.current_font = current_font
     window.apply_theme()
     window.apply_font_to_widgets()
 
-    # Restore saved rows if any
     for i, box in enumerate(window.boxes):
         if i < len(saved_rows):
             box.symbol.setText(saved_rows[i])
