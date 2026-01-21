@@ -21,7 +21,7 @@ from PyQt5.QtCore import (
 CONFIG_FILE = "config.txt"
 EXCLUDED = {""}
 REFRESH_INTERVAL_MS = 100
-MAX_BOXES = 12  # initial number of rows to create (list can grow)
+MAX_BOXES = 14  # initial number of rows to create (list can grow)
 # -------------------------------
 # Config file handling
 # -------------------------------
@@ -126,8 +126,8 @@ class PriceBox(QFrame):
         self.setGraphicsEffect(shadow)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10,5,10,5)
-        layout.setSpacing(12)
+        layout.setContentsMargins(8,1,8,1)
+        layout.setSpacing(6)
 
         
         
@@ -181,34 +181,34 @@ class PriceBox(QFrame):
         self.up_btn = QPushButton("▲")
         self.down_btn = QPushButton("▼")
         for btn in (self.up_btn, self.down_btn):
-            btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
-            btn.setFixedSize(28, 28)
+            btn.setStyleSheet("color: gray; font-size: 16pt; background: transparent; border: none;")
+            btn.setFixedSize(20, 20)
             btn.setCursor(Qt.PointingHandCursor)
         self.arrow_col.addWidget(self.up_btn, alignment=Qt.AlignHCenter)
         self.arrow_col.addWidget(self.down_btn, alignment=Qt.AlignHCenter)
         layout.addLayout(self.arrow_col)
         
-        
+    
         # initialize button visibility
         
 
         # Remove (✖) button
         self.remove_btn = QPushButton("✖")
-        self.remove_btn.setStyleSheet("color: red; font-size: 18pt; background: transparent; border: none;")
+        self.remove_btn.setStyleSheet("color: red; font-size: 16pt; background: transparent; border: none;")
         self.remove_btn.setCursor(Qt.PointingHandCursor)
         self.remove_btn.clicked.connect(self.remove_self)
         layout.addWidget(self.remove_btn)
 
         # Add (➕) button
         self.add_btn = QPushButton("➕")
-        self.add_btn.setStyleSheet("color: lime; font-size: 18pt; background: transparent; border: none;")
+        self.add_btn.setStyleSheet("color: lime; font-size: 16pt; background: transparent; border: none;")
         self.add_btn.setCursor(Qt.PointingHandCursor)
         self.add_btn.clicked.connect(self.start_add)
         layout.addWidget(self.add_btn)
 
         # Input + dropdown for symbol search (hidden by default)
         self.input = QLineEdit()
-        self.input.setStyleSheet("font-size: 18pt;")
+        self.input.setStyleSheet("font-size: 16pt;")
         self.input.hide()
         layout.addWidget(self.input, 2)
 
@@ -323,18 +323,18 @@ class PriceBox(QFrame):
         """Update text colors for labels based on current theme."""
         if self.parent_widget and self.parent_widget.is_darkmode:
             # Dark mode
-            self.symbol.setStyleSheet("color: white; font-size: 20pt;")
-            self.high.setStyleSheet("color: white; font-size: 22pt;")
-            self.low.setStyleSheet("color: white; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
+            self.symbol.setStyleSheet("color: white; font-size: 18pt;")
+            self.high.setStyleSheet("color: white; font-size: 20pt;")
+            self.low.setStyleSheet("color: white; font-size: 20pt;")
+            self.up_btn.setStyleSheet("color: gray; font-size: 16pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet("color: gray; font-size: 16pt; background: transparent; border: none;")
         else:
             # Light mode
-            self.symbol.setStyleSheet("color: black; font-size: 20pt;")
-            self.high.setStyleSheet("color: black; font-size: 22pt;")
-            self.low.setStyleSheet("color: black; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
+            self.symbol.setStyleSheet("color: black; font-size: 18pt;")
+            self.high.setStyleSheet("color: black; font-size: 20pt;")
+            self.low.setStyleSheet("color: black; font-size: 20pt;")
+            self.up_btn.setStyleSheet("color: lightgray; font-size: 16pt; background: transparent; border: none;")
+            self.down_btn.setStyleSheet("color: lightgray; font-size: 16pt; background: transparent; border: none;")
 
 
 # -------------------------------
