@@ -6,7 +6,7 @@ import pandas as pd
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton,
     QFileDialog, QVBoxLayout, QHBoxLayout, QMessageBox, QComboBox,
-    QGridLayout, QGraphicsDropShadowEffect, QShortcut, QFrame,
+    QGridLayout, QGraphicsDropShadowEffect, QShortcut, QFrame, QSpinBox,
     QListWidget, QListWidgetItem, QScrollArea, QStyledItemDelegate, QStyle, QShortcut
 )
 from PyQt5.QtGui import QColor, QKeySequence, QPixmap, QPainter, QPolygon, QBrush, QFont, QFontDatabase
@@ -22,6 +22,7 @@ CONFIG_FILE = "config.txt"
 EXCLUDED = {""}
 REFRESH_INTERVAL_MS = 100
 MAX_BOXES = 12  # initial number of rows to create (list can grow)
+BASE_FONT_SIZE = 10
 # -------------------------------
 # Config file handling
 # -------------------------------
@@ -111,6 +112,10 @@ class PriceBox(QFrame):
         super().__init__()
         self.last_bid = 0.0
         self.last_ask = 0.0
+        self._bid_color = "white"
+        self._ask_color = "white"
+        self._bid_bold = False
+        self._ask_bold = False
         self.remove_callback = remove_callback
         self.add_callback = add_callback
         self.parent_widget = parent_widget  # MainWindow
@@ -134,13 +139,13 @@ class PriceBox(QFrame):
 
         # Symbol
         self.symbol = QLabel(symbol)
-        self.symbol.setStyleSheet("color: white; font-size: 20pt; ")
+        self.symbol.setStyleSheet(f"color: white; font-size: {self._pt(20)}pt; ")
         #self.symbol.setFixedWidth(700)
         layout.addWidget(self.symbol, 1)
 
         # Bid
         self.bid = QLabel("")
-        self.bid.setStyleSheet("color: white; font-size: 22pt;")
+        self.bid.setStyleSheet(f"color: white; font-size: {self._pt(22)}pt;")
         self.bid_arrow = QLabel()
         bid_layout = QHBoxLayout()
         bid_layout.setContentsMargins(0,0,0,0)
@@ -153,7 +158,7 @@ class PriceBox(QFrame):
 
         # Ask
         self.ask = QLabel("")
-        self.ask.setStyleSheet("color: white; font-size: 22pt;")
+        self.ask.setStyleSheet(f"color: white; font-size: {self._pt(22)}pt;")
         self.ask_arrow = QLabel()
         ask_layout = QHBoxLayout()
         ask_layout.setContentsMargins(0,0,0,0)
@@ -166,12 +171,12 @@ class PriceBox(QFrame):
 
         # High
         self.high = QLabel("")
-        self.high.setStyleSheet("color: white; font-size: 22pt;")
+        self.high.setStyleSheet(f"color: white; font-size: {self._pt(22)}pt;")
         layout.addWidget(self.high,1)
 
         # Low
         self.low = QLabel("")
-        self.low.setStyleSheet("color: white; font-size: 22pt;")
+        self.low.setStyleSheet(f"color: white; font-size: {self._pt(22)}pt;")
         layout.addWidget(self.low,1)
 
         # Visual Up/Down arrows (stacked)
@@ -181,7 +186,7 @@ class PriceBox(QFrame):
         self.up_btn = QPushButton("▲")
         self.down_btn = QPushButton("▼")
         for btn in (self.up_btn, self.down_btn):
-            btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
+            btn.setStyleSheet(f"color: gray; font-size: {self._pt(18)}pt; background: transparent; border: none;")
             btn.setFixedSize(28, 28)
             btn.setCursor(Qt.PointingHandCursor)
         self.arrow_col.addWidget(self.up_btn, alignment=Qt.AlignHCenter)
@@ -194,21 +199,21 @@ class PriceBox(QFrame):
 
         # Remove (✖) button
         self.remove_btn = QPushButton("✖")
-        self.remove_btn.setStyleSheet("color: red; font-size: 18pt; background: transparent; border: none;")
+        self.remove_btn.setStyleSheet(f"color: red; font-size: {self._pt(18)}pt; background: transparent; border: none;")
         self.remove_btn.setCursor(Qt.PointingHandCursor)
         self.remove_btn.clicked.connect(self.remove_self)
         layout.addWidget(self.remove_btn)
 
         # Add (➕) button
         self.add_btn = QPushButton("➕")
-        self.add_btn.setStyleSheet("color: lime; font-size: 18pt; background: transparent; border: none;")
+        self.add_btn.setStyleSheet(f"color: lime; font-size: {self._pt(18)}pt; background: transparent; border: none;")
         self.add_btn.setCursor(Qt.PointingHandCursor)
         self.add_btn.clicked.connect(self.start_add)
         layout.addWidget(self.add_btn)
 
         # Input + dropdown for symbol search (hidden by default)
         self.input = QLineEdit()
-        self.input.setStyleSheet("font-size: 18pt;")
+        self.input.setStyleSheet(f"font-size: {self._pt(18)}pt;")
         self.input.hide()
         layout.addWidget(self.input, 2)
 
@@ -227,6 +232,50 @@ class PriceBox(QFrame):
 
         # initialize button visibility
         self.update_buttons(show_add=False)
+        self.apply_styles()
+
+    def _pt(self, base_pt):
+        if self.parent_widget and hasattr(self.parent_widget, "get_scaled_size"):
+            return self.parent_widget.get_scaled_size(base_pt)
+        return base_pt
+
+    def _apply_bid_style(self):
+        size = self._pt(22)
+        weight = "bold" if self._bid_bold else "normal"
+        self.bid.setStyleSheet(f"color: {self._bid_color}; font-size: {size}pt; font-weight: {weight};")
+
+    def _apply_ask_style(self):
+        size = self._pt(22)
+        weight = "bold" if self._ask_bold else "normal"
+        self.ask.setStyleSheet(f"color: {self._ask_color}; font-size: {size}pt; font-weight: {weight};")
+
+    def apply_styles(self):
+        """Apply theme + size-aware styles for this row."""
+        symbol_size = self._pt(20)
+        price_size = self._pt(22)
+        btn_size = self._pt(18)
+        input_size = self._pt(18)
+
+        if self.parent_widget and self.parent_widget.is_darkmode:
+            text_color = "white"
+            arrow_color = "gray"
+        else:
+            text_color = "black"
+            arrow_color = "lightgray"
+
+        self.symbol.setStyleSheet(f"color: {text_color}; font-size: {symbol_size}pt;")
+        self.high.setStyleSheet(f"color: {text_color}; font-size: {price_size}pt;")
+        self.low.setStyleSheet(f"color: {text_color}; font-size: {price_size}pt;")
+
+        self.up_btn.setStyleSheet(f"color: {arrow_color}; font-size: {btn_size}pt; background: transparent; border: none;")
+        self.down_btn.setStyleSheet(f"color: {arrow_color}; font-size: {btn_size}pt; background: transparent; border: none;")
+
+        self.remove_btn.setStyleSheet(f"color: red; font-size: {btn_size}pt; background: transparent; border: none;")
+        self.add_btn.setStyleSheet(f"color: lime; font-size: {btn_size}pt; background: transparent; border: none;")
+        self.input.setStyleSheet(f"font-size: {input_size}pt;")
+
+        self._apply_bid_style()
+        self._apply_ask_style()
 
     def update_buttons(self, show_add):
         """Only show + on first empty row; show ✖ only when symbol exists."""
@@ -289,22 +338,28 @@ class PriceBox(QFrame):
         try:
             bid = float(bid)
             if bid > self.last_bid:
-                self.bid.setStyleSheet("color: lime; font-size: 22pt; font-weight:bold;")
+                self._bid_color = "lime"
+                self._bid_bold = True
             elif bid < self.last_bid:
-                self.bid.setStyleSheet("color: red; font-size: 22pt; font-weight:bold;")
+                self._bid_color = "red"
+                self._bid_bold = True
             self.bid.setText(_fmt(bid))
             self.last_bid = bid
+            self._apply_bid_style()
         except:
             self.bid.setText(str(bid))
 
         try:
             ask = float(ask)
             if ask > self.last_ask:
-                self.ask.setStyleSheet("color: lime; font-size: 22pt; font-weight:bold;")
+                self._ask_color = "lime"
+                self._ask_bold = True
             elif ask < self.last_ask:
-                self.ask.setStyleSheet("color: red; font-size: 22pt; font-weight:bold;")
+                self._ask_color = "red"
+                self._ask_bold = True
             self.ask.setText(_fmt(ask))
             self.last_ask = ask
+            self._apply_ask_style()
         except:
             self.ask.setText(str(ask))
 
@@ -320,21 +375,8 @@ class PriceBox(QFrame):
         self.setStyleSheet(f"QFrame {{ background-color: {bg_color}; border-radius: 5px;}}")
         
     def apply_theme(self):
-        """Update text colors for labels based on current theme."""
-        if self.parent_widget and self.parent_widget.is_darkmode:
-            # Dark mode
-            self.symbol.setStyleSheet("color: white; font-size: 20pt;")
-            self.high.setStyleSheet("color: white; font-size: 22pt;")
-            self.low.setStyleSheet("color: white; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: gray; font-size: 18pt; background: transparent; border: none;")
-        else:
-            # Light mode
-            self.symbol.setStyleSheet("color: black; font-size: 20pt;")
-            self.high.setStyleSheet("color: black; font-size: 22pt;")
-            self.low.setStyleSheet("color: black; font-size: 22pt;")
-            self.up_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
-            self.down_btn.setStyleSheet("color: lightgray; font-size: 18pt; background: transparent; border: none;")
+        """Update text colors and sizes for labels based on current theme."""
+        self.apply_styles()
 
 
 # -------------------------------
@@ -416,6 +458,17 @@ class FontChanger(QWidget):
         self.populate_fonts()
         layout.addWidget(self.font_dropdown)
 
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("Font size:"))
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(6, 72)
+        current_size = self.main_window.current_font.pointSize()
+        if current_size <= 0:
+            current_size = 10
+        self.size_spin.setValue(current_size)
+        size_row.addWidget(self.size_spin)
+        layout.addLayout(size_row)
+
         self.apply_btn = QPushButton("Apply Font")
         self.apply_btn.clicked.connect(self.apply_font)
         layout.addWidget(self.apply_btn)
@@ -426,13 +479,23 @@ class FontChanger(QWidget):
         font_db = QFontDatabase()
         fonts = font_db.families()
         self.font_dropdown.addItems(fonts)
+        self.font_dropdown.setCurrentText(self.main_window.current_font.family())
 
     def apply_font(self):
         font_name = self.font_dropdown.currentText()
-        font = QFont(font_name, 10)
+        font = QFont(font_name, self.size_spin.value())
         self.main_window.current_font = font
         self.main_window.apply_font_to_widgets()
         QApplication.setFont(font)
+        # Persist immediately so config reflects the chosen size
+        rows = [b.symbol.text().strip() for b in self.main_window.boxes]
+        save_config(
+            self.main_window.source.path,
+            self.main_window.source.sheet_name,
+            rows=rows,
+            font=font,
+            is_darkmode=self.main_window.is_darkmode
+        )
         self.close()            
             
 
@@ -466,10 +529,9 @@ class MainWindow(QWidget):
         for i, h in enumerate(headers):
             lbl = QLabel(h)
             if self.is_darkmode:
-                
-                lbl.setStyleSheet("color: gold; font-size: 16pt; font-weight:bold;")
+                lbl.setStyleSheet(f"color: gold; font-size: {self.get_scaled_size(16)}pt; font-weight:bold;")
             else:
-                lbl.setStyleSheet("color: black; font-size: 16pt; font-weight:bold;")
+                lbl.setStyleSheet(f"color: black; font-size: {self.get_scaled_size(16)}pt; font-weight:bold;")
             lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             
             if h.lower() == "symbol":
@@ -535,7 +597,7 @@ class MainWindow(QWidget):
         self.mode_btn = QPushButton("🌓")
         self.mode_btn.setFixedSize(35, 35)
         self.mode_btn.clicked.connect(self.toggle_mode)
-        self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
+        self.mode_btn.setStyleSheet(f"color: white; font-size: {self.get_scaled_size(18)}pt; border: 1px solid white;")
         hl.addWidget(self.mode_btn)
 
         
@@ -611,7 +673,9 @@ class MainWindow(QWidget):
             header_color = "black"
             
         for lbl in self.header_frame.findChildren(QLabel):
-            lbl.setStyleSheet(f"color: {header_color}; font-weight: bold; font-size: 18pt")
+            lbl.setStyleSheet(f"color: {header_color}; font-weight: bold; font-size: {self.get_scaled_size(16)}pt")
+        if hasattr(self, "mode_btn"):
+            self.mode_btn.setStyleSheet(f"color: white; font-size: {self.get_scaled_size(18)}pt; border: 1px solid white;")
 
             
             
@@ -844,6 +908,15 @@ class MainWindow(QWidget):
         if hasattr(self, 'header_frame'):
             for lbl in self.header_frame.findChildren(QLabel):
                 lbl.setFont(self.current_font)
+        self.apply_theme()
+        for box in self.boxes:
+            box.apply_theme()
+
+    def get_scaled_size(self, base_pt):
+        size = self.current_font.pointSize()
+        if size <= 0:
+            size = BASE_FONT_SIZE
+        return max(1, round(base_pt * (size / BASE_FONT_SIZE)))
                 
     
     
