@@ -1,5 +1,4 @@
-FILE_PATH=Excel file location here
-SHEET_NAME=Лист1
-FONT=Arial,10
+SYMBOLS=gbpusd:gbpusd,goldd:xauusd,usdjpy:usdjpy,usdcad:usdcad
+FONT=Arial Black,10
 IS_DARKMODE=True
-ROWS=GOLD PER OZ $,SILVER PER OZ $,GBPUSD,USDJPY,EURUSD,NZDUSD,PLATINUM,GOLD TT BAR IN AED,APPLE,USDCAD,USDCHF,GBPCHF,
+ROWS=gbpusd,goldd,usdjpy,usdcad,,,,,,,,
