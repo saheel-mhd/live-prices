@@ -1,4 +1,4 @@
-SYMBOLS=gbpusd:gbpusd,natgas:natgas.cash,natgas jul:natgas.jul6,natgas jun:natgas.jun6,gold aug:gold.aug6,usdjpy:usdjpy
-FONT=Arial,10
+SYMBOLS=gbpusd:gbpusd,goldd:xauusd,usdjpy:usdjpy,usdcad:usdcad
+FONT=Arial Black,10
 IS_DARKMODE=True
-ROWS=gbpusd,usdjpy,natgas,natgas jul,natgas jun,gold aug,,,,,,
+ROWS=gbpusd,goldd,usdjpy,usdcad,,,,,,,,
