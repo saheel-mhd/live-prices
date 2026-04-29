@@ -1,5 +1,4 @@
-FILE_PATH=Excel file location here
-SHEET_NAME=Лист1
+SYMBOLS=gbpusd:gbpusd,natgas:natgas.cash,natgas jul:natgas.jul6,natgas jun:natgas.jun6,gold aug:gold.aug6,usdjpy:usdjpy
 FONT=Arial,10
 IS_DARKMODE=True
-ROWS=GOLD PER OZ $,SILVER PER OZ $,GBPUSD,USDJPY,EURUSD,NZDUSD,PLATINUM,GOLD TT BAR IN AED,APPLE,USDCAD,USDCHF,GBPCHF,
+ROWS=gbpusd,usdjpy,natgas,natgas jul,natgas jun,gold aug,,,,,,
