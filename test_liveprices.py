@@ -8,6 +8,10 @@ import tempfile
 import unittest
 
 import liveprices
+from PyQt5.QtWidgets import QApplication
+
+# A QApplication must exist before any QFont is constructed (load_config builds one).
+_app = QApplication.instance() or QApplication([])
 
 
 class FmtTests(unittest.TestCase):
@@ -55,6 +59,19 @@ class ConfigRoundTripTests(unittest.TestCase):
             f.write("SYMBOLS=EURUSD\n")
         cfg = liveprices.load_config()
         self.assertEqual(cfg["PAIRS"], [("EURUSD", "EURUSD")])
+
+    def test_font_size_round_trips(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("SYMBOLS=EUR:EURUSD\nFONT=Consolas,18\n")
+        font = liveprices.load_config()["FONT"]
+        self.assertEqual(font.family(), "Consolas")
+        self.assertEqual(font.pointSize(), 18)
+
+    def test_legacy_tiny_font_size_is_upgraded(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("SYMBOLS=EUR:EURUSD\nFONT=Arial,10\n")
+        font = liveprices.load_config()["FONT"]
+        self.assertEqual(font.pointSize(), liveprices.DEFAULT_FONT_SIZE)
 
     def test_missing_file_returns_none(self):
         os.remove(self.path)
