@@ -14,7 +14,7 @@ Built with PyQt5. Uses MT4's built-in DDE server in **advise (hot-link) mode** �
 - Drag-free row reordering with smooth animation (▲ / ▼ buttons)
 - Connection-status dot in the header — green = ticks flowing, amber = connected but no recent ticks, red = no DDE conversation (hover for detail)
 - Dark / light theme toggle
-- Custom font picker
+- Custom font picker — pick a family **and a base size**; the whole grid (symbol, prices, headers, buttons) scales proportionally
 - Up to 20 watched symbols; rows shrink to fit when count exceeds 12
 - Persistent config — symbols, row order, font, and theme survive restarts
 - Hot-editable symbol list — `Ctrl+Shift+S` to add / rename / remove rows on the fly without restarting
@@ -83,7 +83,7 @@ On first launch the symbols editor pops up. Fill in the table:
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+S` | Open symbols editor (add / rename / remove rows live) |
-| `Ctrl+Shift+F` | Change font |
+| `Ctrl+Shift+F` | Change font family + base size |
 | `Ctrl+Shift+F1` | Toggle fullscreen |
 | `🌓` button | Toggle dark / light theme |
 | `▲` / `▼` per row | Reorder |
@@ -120,7 +120,7 @@ State is stored next to the executable in `config.txt`:
 
 ```
 SYMBOLS=GOLD:XAUUSD,SILVER:XAGUSD,EUR:EURUSD
-FONT=Arial,10
+FONT=Arial,22
 IS_DARKMODE=True
 ROWS=GOLD,SILVER,EUR
 ```
@@ -128,7 +128,7 @@ ROWS=GOLD,SILVER,EUR
 | Key | Purpose |
 |---|---|
 | `SYMBOLS` | Comma-separated `name:ticker` pairs |
-| `FONT` | `family,size` |
+| `FONT` | `family,size` — `size` is the base bid/ask point size (12–48); other elements derive from it. Older configs with the legacy `,10` are auto-upgraded to the default on load. |
 | `IS_DARKMODE` | `True` / `False` |
 | `ROWS` | Display order (subset of names from SYMBOLS) |
 
@@ -183,7 +183,7 @@ A single file, intentionally — the whole app fits in one screen-scrollable scr
 | `MT4DDESource` | Win32 DDEML client. Subscribes to BID/ASK/HIGH/LOW topics for every unique MT4 symbol. Stores latest pushes in `self.cache`. |
 | `SymbolsConfigDialog` | Modal table editor for `(name, mt4_symbol)` pairs. Always renders in light theme. |
 | `PriceBox` | One row in the grid. Symbol + bid/ask/low/high + reorder arrows + ✖. |
-| `FontChanger` | Font picker with per-family preview. |
+| `FontChanger` | Font picker — family (with per-family preview) + base size spinner. |
 | `MainWindow` | Header + scrollable rows + theme toggle. Refreshes from the source on a `QTimer`. |
 
 DDE callback (`_on_dde_event`) runs on the main thread when Qt processes Windows messages, so no locking is needed around the cache.
