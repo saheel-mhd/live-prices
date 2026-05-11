@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m unittest test_liveprices -v)",
+      "Bash(python -c \"import liveprices; print\\('import ok'\\); print\\(liveprices.MT4DDESource.status.__doc__\\)\")",
+      "Bash(python -m py_compile liveprices.py test_liveprices.py)"
+    ]
+  }
+}

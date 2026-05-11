@@ -12,6 +12,7 @@ Built with PyQt5. Uses MT4's built-in DDE server in **advise (hot-link) mode** �
 - Bid/ask flash green on up-tick, red on down-tick
 - Custom display names — show `GOLD` in the UI but subscribe to `XAUUSD` over DDE
 - Drag-free row reordering with smooth animation (▲ / ▼ buttons)
+- Connection-status dot in the header — green = ticks flowing, amber = connected but no recent ticks, red = no DDE conversation (hover for detail)
 - Dark / light theme toggle
 - Custom font picker
 - Up to 20 watched symbols; rows shrink to fit when count exceeds 12
@@ -34,7 +35,7 @@ Built with PyQt5. Uses MT4's built-in DDE server in **advise (hot-link) mode** �
 ### 1. Install Python dependencies
 
 ```powershell
-pip install pyqt5
+pip install -r requirements.txt   # just PyQt5
 ```
 
 That's it — the DDE client is implemented directly against the Win32 DDEML APIs via `ctypes`, no `pywin32` or third-party DDE packages required.
@@ -87,6 +88,16 @@ On first launch the symbols editor pops up. Fill in the table:
 | `🌓` button | Toggle dark / light theme |
 | `▲` / `▼` per row | Reorder |
 | `✖` per row | Remove that pair (rows expand back if total > 12) |
+
+---
+
+## Tests
+
+A small smoke test covers price formatting and config save/load round-trips (no extra deps — stdlib `unittest`):
+
+```powershell
+python -m unittest test_liveprices -v
+```
 
 ---
 
