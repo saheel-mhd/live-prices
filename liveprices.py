@@ -13,6 +13,7 @@ DDE_SERVICE = "MT4"
 REFRESH_INTERVAL_MS = 100
 DEFAULT_ROWS = 12
 MAX_ROWS = 20
+STATUS_STALE_SECONDS = 10
 APP_USER_MODEL_ID = "livepriceapp"
 ICON_FILE = "icon.ico"
 
@@ -122,6 +123,7 @@ class MT4DDESource:
         self.pairs = self._normalize(pairs)
         self.mt4_symbols = list(dict.fromkeys(s for _, s in self.pairs))
         self.cache = {}
+        self.last_update_ts = None
         self._first_logged = False
 
         self._callback = _DDECALLBACK(self._on_dde_event)
@@ -227,6 +229,7 @@ class MT4DDESource:
             try:
                 raw = ctypes.string_at(ptr, length.value)
                 self.cache[(topic, item)] = raw.decode("ascii", errors="ignore").rstrip("\x00").strip()
+                self.last_update_ts = time.monotonic()
             finally:
                 _user32.DdeUnaccessData(hData)
         return _DDE_FACK
@@ -249,6 +252,17 @@ class MT4DDESource:
                 self._first_logged = True
             rows.append((name, _fmt(bid), _fmt(ask), _fmt(low), _fmt(high)))
         return rows
+
+    def status(self):
+        """Return ('live' | 'stale' | 'down', human-readable detail)."""
+        if not self._conv:
+            return ("down", "No DDE conversation with MT4")
+        if self.last_update_ts is None:
+            return ("stale", "Connected to MT4 — waiting for first tick")
+        age = time.monotonic() - self.last_update_ts
+        if age <= STATUS_STALE_SECONDS:
+            return ("live", f"Receiving ticks (last update {age:.1f}s ago)")
+        return ("stale", f"No ticks for {age:.0f}s (market quiet or feed paused)")
 
     def close(self):
         try:
@@ -604,6 +618,13 @@ class MainWindow(QWidget):
         spacer.setFixedWidth(5)
         hl.addWidget(spacer)
 
+        self.status_dot = QLabel("●")
+        self.status_dot.setFixedWidth(22)
+        self.status_dot.setAlignment(Qt.AlignCenter)
+        self.status_dot.setToolTip("Connecting…")
+        self._status_state = None
+        hl.addWidget(self.status_dot)
+
         self.mode_btn = QPushButton("🌓")
         self.mode_btn.setFixedSize(35, 35)
         self.mode_btn.setStyleSheet("color: white; font-size: 18pt; border: 1px solid white;")
@@ -663,6 +684,19 @@ class MainWindow(QWidget):
                 box.update_prices(*self.last_rows_dict[name])
             elif not name:
                 box.update_prices("", "", "", "")
+        self._update_status_indicator()
+
+    def _update_status_indicator(self):
+        dot = getattr(self, "status_dot", None)
+        if dot is None:
+            return
+        src = getattr(self, "source", None)
+        state, detail = src.status() if src is not None else ("down", "Not connected")
+        dot.setToolTip(detail)
+        if state != self._status_state:
+            self._status_state = state
+            color = {"live": "#2ecc40", "stale": "#ff9500", "down": "#ff3b30"}.get(state, "gray")
+            dot.setStyleSheet(f"color: {color}; font-size: 14pt;")
 
     def apply_theme(self):
         if self.is_darkmode:
@@ -675,6 +709,8 @@ class MainWindow(QWidget):
             header_color = "black"
         for lbl in self.header_frame.findChildren(QLabel):
             lbl.setStyleSheet(f"color: {header_color}; font-weight: bold; font-size: 18pt;")
+        self._status_state = None
+        self._update_status_indicator()
         for i, box in enumerate(self.boxes):
             box.update_background(i)
             box.apply_theme()
